@@ -12,7 +12,8 @@ clc; close all; clear all;
 imaqreset; % reset device configuration. helps release open device handles.
 
 % user inputs 
-nmaxframes = 200; % how many frames should be displayed during trial?
+%nmaxframes = 200; % how many frames should be displayed during trial?
+nmaxframes = 999999; % how many frames should be displayed during trial?
 nframegrab = 1; % get every nth frame from the camera
 
 % create the video input object. specify the image format and size
