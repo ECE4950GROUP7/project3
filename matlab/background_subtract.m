@@ -37,9 +37,10 @@ FilteredImage=medfilt2(BinaryImage,[5 5]);
 
 % TODO imdilate
 % TODO strel
-%se = strel('sphere',25);
-%FilteredImage = imdilate(BinaryImage,se);
-%imshow(FilteredImage);
+se = strel('sphere',2);
+FilteredImage = imdilate(FilteredImage,se);
+se = strel('sphere',6);
+FilteredImage = imerode(FilteredImage,se);
 
 %Boundary Label the Filtered Image
 [L num]=bwlabel(FilteredImage);
