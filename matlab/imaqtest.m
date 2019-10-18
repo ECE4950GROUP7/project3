@@ -12,7 +12,8 @@ clc; close all; clear all;
 imaqreset; % reset device configuration. helps release open device handles.
 
 % user inputs 
-nmaxframes = 200000; % how many frames should be displayed during trial?
+%nmaxframes = 200; % how many frames should be displayed during trial?
+nmaxframes = 999999; % how many frames should be displayed during trial?
 nframegrab = 15; % get every nth frame from the camera
 
 % create the video input object. specify the image format and size
@@ -29,63 +30,144 @@ fig_image = figure;
 % Start acquiring frames.
 start(vid);
 
-%get background image
-background_image = getdata(vid,1);
-background_image = background_image(:,:,:,1);
-
 % Calculate difference image and display it.
 while(vid.FramesAcquired <= nmaxframes) % stop after a user-specified number of frames
     
     data = getdata(vid,1); % get 1 frame from the video stream > defined using the second parameter
     im = data(:,:,:,1);
-    %you're just going to have to trust that this is a good set of filters to run through
-    builder_image = imsubtract(background_image,im);
-    builder_image = abs(builder_image);
-    builder_image = rgb2gray(builder_image);
-    builder_image = imadjust(builder_image,[0.01 1]);
-    %wiener filter tries to remove noise from the image
-    builder_image = wiener2(builder_image,[7 7]);
-    %without a gaussian blur, triangle edges are VERY harsh and have many artifacts
-    %if one of the artifacts is disconnected from the main triangle blob, regionprops
-    %detects it as its own shape
-    builder_image = imgaussfilt(builder_image);
-    builder_image = imbinarize(builder_image, 0.01);
-    builder_image = imerode(builder_image,strel('disk',2,4));
-    builder_image = imdilate(builder_image,strel('disk',2,4));
-    %we can use this if we want to find the edges of the shapes for whatever reason
-    %edge_values = edge(output_image);
-    %regionprops does a shazam transform to get centroids, bounding boxes, and area of
-    %every shape in a binary image
-    region_props = regionprops(builder_image);
-    centroids = cat(1,region_props.Centroid);
-    numShapes = numel(region_props);
-    output_image = im;
-    %matlab will freak out if we try to iterare from 1:0 later on, so I encapsulated our
-    %for loop within this check to make sure that never happens
-    if numShapes > 0
-        %useful lines for debugging
-        %disp(numShapes);
-        %disp(centroids);
-        %pause();
-        for n =1:numShapes
-            output_image = insertShape(output_image,'rectangle',[(centroids(n,1)-25) (centroids(n,2)-25) 50 50]);
-            %this line should be capable of plotting the centroids of the regions as well
-            %output_image = insertShape(output_image,'circle',[centroids(n,1) centroids(n,2) 3],'LineWidth',2,'Color','red');
+    
+    dims = size(im);
+    rows = dims(1);
+    cols = dims(2);
+    builder_image = im;
+    lowThreshold = 100;
+    highThreshold = 80;
+    %varianceThreshold = 5;
+    %disp(rows);
+    %disp(cols);
+    %disp(size(im));
+    for y=1:rows
+        for x=1:cols
+            %disp(x);
+            %disp(y);
+            %disp(size(im));
+            %disp('-------');
+            red = im(y,x,1);
+            green = im(y,x,2);
+            blue = im(y,x,3);
+            lowestVal = red;
+            if green < lowestVal
+                lowestVal = green;
+            end
+            if blue < lowestVal
+                lowestVal = blue;
+            end
+            highestVal = red;
+            if green > highestVal
+                highestVal = green;
+            end
+            if blue > highestVal
+                highestVal = blue;
+            end
+            %delta = max(red,green,blue);
+            %delta = abs(red-green) + abs(red-blue) + abs(green-blue);
+            if lowestVal > lowThreshold
+                builder_image(y,x,1) = 0;
+                builder_image(y,x,2) = 0;
+                builder_image(y,x,3) = 0;
+            elseif highestVal < highThreshold
+                builder_image(y,x,1) = 0;
+                builder_image(y,x,2) = 0;
+                builder_image(y,x,3) = 0;
+            else
+                %variance = abs(red-green) + abs(red-blue) + abs(green-blue);
+                if (x<40)||(y<40)||(x>600)||(y>440)
+                    builder_image(y,x,1) = 0;
+                    builder_image(y,x,2) = 0;
+                    builder_image(y,x,3) = 0;
+                else
+                    builder_image(y,x,1) = im(y,x,1);
+                    builder_image(y,x,2) = im(y,x,2);
+                    builder_image(y,x,3) = im(y,x,3);
+                end
+            end
+            %disp(im(y,x));
+            %pause();
         end
     end
+    thresholded_image = builder_image;
+    binary_image = imbinarize(rgb2gray(builder_image));
+    props = regionprops(binary_image);
+    centroids = cat(1,props.Centroid);
+    areas = cat(1,props.Area);
+    numShapes = numel(props);
+    
+    MinAreaThreshold = 150;
+    TriangleSquareThreshold = 350;
+    CircleSquareThreshold = 800;
+    output_image = im;
+    shapes = [];
+    if numShapes > 0
+        for n =1:numShapes
+            if areas(n) > MinAreaThreshold
+                currentShape = ['','','',''];
+                desc = '';
+                if areas(n) > CircleSquareThreshold
+                    %output_image = insertText(output_image, [(centroids(n,1)-25) (centroids(n,2)-75)], 'Circle');
+                    currentShape(1) = 1;
+                    desc = 'Circle,';
+                elseif areas(n) > TriangleSquareThreshold
+                    %output_image = insertText(output_image, [(centroids(n,1)-25) (centroids(n,2)-75)], 'Square');
+                    currentShape(1) = 2;
+                    desc = 'Square,';
+                else
+                    %output_image = insertText(output_image, [(centroids(n,1)-25) (centroids(n,2)-75)], 'Triangle');
+                    currentShape(1) = 3;
+                    desc = 'Triangle,';
+                end
+                currentShape(2) = centroids(n,1);
+                currentShape(3) = centroids(n,2);
+                xcoord = round(centroids(n,1));
+                ycoord = round(centroids(n,2));
+                red = uint64(im(ycoord,xcoord,1));
+                green = uint64(im(ycoord,xcoord,2));
+                blue = uint64(im(ycoord,xcoord,3));
+                bred = red*red;
+                bgreen = green*green;
+                bblue = blue*blue;
+                %output_image(ycoord,xcoord,1) = 0;
+                %output_image(ycoord,xcoord,2) = 255;
+                %output_image(ycoord,xcoord,3) = 255;
+                %desc = strcat(desc,',',int2str(xcoord),',',int2str(ycoord),',');
+                %desc = strcat(desc,'(',int2str(red),',',int2str(green),',',int2str(blue),'),');
+                if bblue - 100 > bred && bblue - 100 > bgreen
+                    currentShape(4) = 1;
+                    desc = strcat(desc,'blue');
+                elseif bgreen - 1000 > bred && (red + green + blue) < 300po
+                    currentShape(4) = 2;
+                    desc = strcat(desc,'green');
+                elseif bred - 2000 > bgreen
+                    currentShape(4) = 3;
+                    desc = strcat(desc,'red');
+                else
+                    currentShape(4) = 4;
+                    desc = strcat(desc,'yellow');
+                end
+                %disp(desc);
+                %disp(currentShape);
+                horzcat(shapes,currentShape);
+                output_image = insertText(output_image, [(centroids(n,1)-25) (centroids(n,2)-50)], desc);
+                %output_image = insertText(output_image, [(centroids(n,1)-25) (centroids(n,2)-50)], int2str(areas(n)));
+                output_image = insertShape(output_image,'rectangle',[(centroids(n,1)-25) (centroids(n,2)-25) 50 50]);
+                output_image = insertShape(output_image,'circle',[centroids(n,1) centroids(n,2) 3],'LineWidth',2,'Color','red');
+            end
+        end
+    end
+    
     figure(fig_image);
-    %this shows us the real image with the detected shapes bounded
     imshow(output_image);
-    %uncomment this instead to show the massively filtered image
-    %imshow(builder_image);
     title_txt = sprintf('Image %d',vid.FramesAcquired);
     title(title_txt);
-    hold on;
-    %this plots the centroids of the regions detected
-    if size(centroids) >= size([1 1])
-        plot(centroids(:,1),centroids(:,2),'b*');
-    end
-    hold off;
     
 end
 
